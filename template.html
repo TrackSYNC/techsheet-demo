@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>TechSheet Prototype</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#EEF0F3; --bar:#0B2545; --bar-fg:#F4F6FA; --bar-muted:#AEB9CC;
+    --tab:#16345C; --tab-active:#FFFFFF; --tab-active-fg:#0B2545;
+    --accent:#C8102E; --line:#C9CFD8; --card:#FFFFFF; --ink:#15181D; --muted:#5B6472;
+    --display:'Barlow Condensed','Arial Narrow',sans-serif;
+    --body:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{background:var(--bg);color:var(--ink);font-family:var(--body);}
+
+  /* Password gate */
+  #gate{min-height:100%;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--bar);}
+  #gate form{background:var(--card);border-radius:14px;padding:26px 24px;width:100%;max-width:360px;border-top:4px solid var(--accent);}
+  #gate h1{font-family:var(--display);font-size:28px;margin:0 0 4px;color:var(--bar);}
+  #gate p{font-size:13px;color:var(--muted);margin:0 0 18px;line-height:1.5;}
+  #gate label{display:block;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+  #pw{width:100%;font-size:18px;padding:10px 12px;border:2px solid var(--line);border-radius:9px;outline:none;letter-spacing:.2em;}
+  #pw:focus{border-color:var(--bar);}
+  #gate button{width:100%;margin-top:14px;font:600 15px var(--body);color:#fff;background:var(--bar);border:0;border-radius:9px;padding:12px;cursor:pointer;}
+  #gate button:disabled{opacity:.6;cursor:wait;}
+  #err{color:var(--accent);font-size:13px;min-height:18px;margin-top:10px;}
+
+  /* Viewer */
+  #app{height:100%;display:flex;flex-direction:column;}
+  #app[hidden],#gate[hidden]{display:none;}
+  header{background:var(--bar);color:var(--bar-fg);padding:12px 16px 0;display:flex;flex-direction:column;gap:10px;border-bottom:3px solid var(--accent);}
+  .top{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;}
+  header h2{font-family:var(--display);font-weight:700;font-size:22px;letter-spacing:.02em;margin:0;}
+  .note{font-size:12.5px;color:var(--bar-muted);}
+  .note b{color:var(--bar-fg);font-weight:600;}
+  nav{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;}
+  nav button{font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--bar-fg);background:var(--tab);border:0;border-radius:8px 8px 0 0;padding:9px 16px 8px;cursor:pointer;white-space:nowrap;display:flex;flex-direction:column;align-items:flex-start;gap:1px;}
+  nav button small{font-family:var(--body);font-size:10.5px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--bar-muted);}
+  nav button[aria-selected="true"]{background:var(--tab-active);color:var(--tab-active-fg);}
+  nav button[aria-selected="true"] small{color:var(--muted);}
+  nav button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  iframe{flex:1;width:100%;border:0;background:#F3F1EA;}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <form id="gateForm" autocomplete="off">
+    <h1>TechSheet Prototype</h1>
+    <p>Preview for peer review. Enter the password you were given.</p>
+    <label for="pw">Password</label>
+    <input id="pw" type="password" inputmode="numeric" autofocus>
+    <button id="unlock" type="submit">Open prototype</button>
+    <div id="err" role="alert"></div>
+  </form>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <div class="top">
+      <h2>TechSheet Prototype</h2>
+      <span class="note">Screens as built on <b>9/28</b>, before the v1 workflow (9/30). Sandbox only: nothing is sent or saved.</span>
+    </div>
+    <nav role="tablist" aria-label="Prototype screens">
+      <button role="tab" data-screen="participant" aria-selected="true">Participant<small>Fills car info, signs owner line</small></button>
+      <button role="tab" data-screen="inspector" aria-selected="false">Inspector<small>Checklist + inspector signature</small></button>
+      <button role="tab" data-screen="instructor" aria-selected="false">Instructor<small>Self-certifies both lines</small></button>
+      <button role="tab" data-screen="staff" aria-selected="false">Staff<small>Green / Yellow / Red at tech line</small></button>
+    </nav>
+  </header>
+  <iframe id="screen" title="Participant screen"></iframe>
+</div>
+
+<script>
+  const PAYLOAD = __PAYLOAD__;
+  const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  let screens = null;
+
+  async function decrypt(password){
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey(
+      {name:'PBKDF2', salt:b64(PAYLOAD.salt), iterations:PAYLOAD.iter, hash:'SHA-256'},
+      base, {name:'AES-GCM', length:256}, false, ['decrypt']);
+    const plain = await crypto.subtle.decrypt({name:'AES-GCM', iv:b64(PAYLOAD.iv)}, key, b64(PAYLOAD.ct));
+    return JSON.parse(new TextDecoder().decode(plain));
+  }
+
+  const frame = document.getElementById('screen');
+  const tabs = [...document.querySelectorAll('nav button')];
+  function show(name){
+    if(!screens[name]) name = 'participant';
+    tabs.forEach(t => t.setAttribute('aria-selected', String(t.dataset.screen === name)));
+    frame.title = name.charAt(0).toUpperCase() + name.slice(1) + ' screen';
+    frame.srcdoc = screens[name];
+  }
+  tabs.forEach(t => t.addEventListener('click', () => {
+    show(t.dataset.screen);
+    history.replaceState(null, '', '#' + t.dataset.screen);
+  }));
+
+  async function unlock(password, remember){
+    screens = await decrypt(password);
+    if(remember){ try{ sessionStorage.setItem('ts-pw', password); }catch(e){} }
+    document.getElementById('gate').hidden = true;
+    document.getElementById('app').hidden = false;
+    show(location.hash.slice(1));
+  }
+
+  document.getElementById('gateForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('unlock'), err = document.getElementById('err');
+    btn.disabled = true; btn.textContent = 'Checking…'; err.textContent = '';
+    try{ await unlock(document.getElementById('pw').value, true); }
+    catch(_){ err.textContent = 'That password did not work. Check it and try again.'; }
+    btn.disabled = false; btn.textContent = 'Open prototype';
+  });
+
+  (async () => {
+    let saved = null;
+    try{ saved = sessionStorage.getItem('ts-pw'); }catch(e){}
+    if(saved){ try{ await unlock(saved, false); }catch(_){} }
+  })();
+</script>
+</body>
+</html>
